@@ -7,6 +7,12 @@ output: html_document
 
 ```{r}
 
+
+
+# https://lib.stat.cmu.edu/datasets/Plasma_Retinol
+
+
+library(readr)
   # Read data
 pr_data <- read_delim("Plasma_Retinol.txt", 
                       delim = "\t", 
@@ -47,6 +53,8 @@ form <- as.formula(
          paste(X, collapse="+")) )
 
 model <- lm(form, data = pr_data)
+
+summary(model)
 
 
 
