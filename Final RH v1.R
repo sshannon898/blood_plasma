@@ -14,6 +14,10 @@ colnames(df) <-  c("age", "sex", "smokestat", "quetelet",
                    "alcohol", "cholesterol", "betadiet", "retdiet",
                    "betaplasma", "retplasma")
 
+df$sex <- factor(df$sex)
+df$smokestat <- factor(df$smokestat)
+df$vituse <- factor(df$vituse)
+
 View(df)
 
 # fit model
@@ -87,11 +91,12 @@ df
 
 # cor plot (maybe beautify later)
 library(corrplot)
-corrplot(cor(df[, 1:12]), method = "color")
+corrplot(cor(df[, c("age", "quetelet", "calories", "fat", "fiber", "alcohol", "cholesterol",
+                    "betadiet", "retdiet")]), method = "color")
 corrplot(cor(df[, 13:14]), method = "ellipse")
 
 # correlation btwn calories, fat, fiber, alcohol use, cholesterol, betadiet and retdiet
-# sex & cholesterol/alcohol fairly sig, 
+# cholesterol/alcohol fairly sig, 
 
 
 
@@ -126,20 +131,163 @@ for (pred in names(df)) {
 ggplot(df, aes(x = sex)) +
   geom_bar(fill = "darksalmon", color = "black", width = 0.5) +
   theme_minimal(base_size = 14) +
-  labs(title = "Count of Sexes",
-       x = "Sex",
+  labs(title = "Sexes",
+       x = "sex",
        y = "Count")
 
 ggplot(df, aes(x = smokestat)) +
   geom_bar(fill = "darkorchid2", color = "black", width = 0.5) +
   theme_minimal(base_size = 14) +
-  labs(title = "Count of Smoking Status",
-       x = "Smoking Status",
+  labs(title = "Smoking Status",
+       x = "smokestat",
        y = "Count")
 
 ggplot(df, aes(x = vituse)) +
   geom_bar(fill = "deepskyblue2", color = "black", width = 0.5) +
   theme_minimal(base_size = 14) +
-  labs(title = "Count of Vitamin Use",
-       x = "Vitamin Use",
+  labs(title = "Vitamin Use",
+       x = "vituse",
        y = "Count")
+
+
+# test subsets of predictors
+
+responses <- c("betaplasma", "retplasma")
+predictors <- colnames(df)[1:12]
+
+
+# test type choices : Pillai, Wilks, Roy, Hotelling-Lawley
+get_stats <- function(vars, test_type = "Pillai") {
+  
+  if (length(vars) == 0) {
+    return(data.frame(
+      predictors = "",
+      num_predictors = 0,
+      F_value = NA,
+      p_value = NA
+    ))
+  }
+  
+  form <- as.formula(
+    paste0("cbind(", paste(responses, collapse = ", "), ") ~ ",
+           paste(vars, collapse = " + "))
+  )
+  
+  fit <- manova(form, data = df)
+  
+  # Can change test if desired
+  sm <- summary(fit, test = test_type)
+  
+  # Extract F-statistic and p-value
+  F_val <- sm$stats[1, "approx F"]
+  p_val <- sm$stats[1, "Pr(>F)"]
+  
+  data.frame(
+    predictors = paste(vars, collapse = ","),
+    num_predictors = length(vars),
+    F_value = F_val,
+    p_value = p_val
+  )
+}
+
+# Get all subsets of predictors
+all_subsets <- unlist(
+  lapply(0:length(predictors), function(k)
+    combn(predictors, k, simplify = FALSE)
+  ),
+  recursive = FALSE
+)
+
+# Compute results
+results_pillai <- do.call(rbind, lapply(all_subsets, get_stats, test_type = "Pillai"))
+
+head(results_pillai)
+sum(results_pillai$p_value < 0.05, na.rm = TRUE)
+
+alpha <- 0.05
+
+prop_sig_pillai <- aggregate(
+  p_value ~ num_predictors,
+  data = results_pillai,
+  FUN = function(p) mean(p < alpha, na.rm = TRUE)
+)
+
+prop_sig_pillai <- prop_sig_pillai %>%
+  mutate(test = "pillai")
+
+# wilks
+
+results_wilks <- do.call(rbind, lapply(all_subsets, get_stats, test_type = "Wilks"))
+
+head(results_wilks)
+sum(results_wilks$p_value < 0.05, na.rm = TRUE)
+
+alpha <- 0.05
+
+prop_sig_wilks <- aggregate(
+  p_value ~ num_predictors,
+  data = results_wilks,
+  FUN = function(p) mean(p < alpha, na.rm = TRUE)
+)
+
+prop_sig_wilks <- prop_sig_wilks %>%
+  mutate(test = "wilks")
+
+# hotelling
+
+results_hotelling_lawley <- do.call(rbind, lapply(all_subsets, get_stats, test_type = "Hotelling-Lawley"))
+
+head(results_hotelling_lawley)
+sum(results_hotelling_lawley$p_value < 0.05, na.rm = TRUE)
+
+alpha <- 0.05
+
+prop_sig_hotelling_lawley <- aggregate(
+  p_value ~ num_predictors,
+  data = results_hotelling_lawley,
+  FUN = function(p) mean(p < alpha, na.rm = TRUE)
+)
+
+prop_sig_hotelling_lawley <- prop_sig_hotelling_lawley %>%
+  mutate(test = "hotelling")
+
+# roy 
+results_roy <- do.call(rbind, lapply(all_subsets, get_stats, test_type = "Roy"))
+
+head(results_roy)
+sum(results_roy$p_value < 0.05, na.rm = TRUE)
+
+alpha <- 0.05
+
+prop_sig_roy <- aggregate(
+  p_value ~ num_predictors,
+  data = results_roy,
+  FUN = function(p) mean(p < alpha, na.rm = TRUE)
+)
+
+prop_sig_roy <- prop_sig_roy %>%
+  mutate(test = "roy")
+
+# All tests produce the same proportion of significant subsets for each num predictors (sample size is larger, makes sense. Small discrepancies in F vals)
+
+library(ggplot2)
+
+ggplot(prop_sig_pillai, aes(x = num_predictors, y = p_value)) +
+  geom_line(size = 1, color = "steelblue2") +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = 1:12) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(
+    title = "Proportion of Significant Subsets",
+    x = "Number of Predictors",
+    y = "Proportion Significant"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    plot.title = element_text(size = 16, face = "bold")
+  )
+
+
+
