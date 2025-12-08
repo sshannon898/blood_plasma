@@ -36,26 +36,60 @@ colnames(pr_data) <- c("AGE",
                        "RETPLASMA")
 
 
+pr_data$SEX <- factor(pr_data$SEX)
+pr_data$SMOKSTAT <- factor(pr_data$SMOKSTAT)
+pr_data$VITUSE <- factor(pr_data$VITUSE)
+
+
 ```
 
 
 ```{r}
 
-  # multivariate regression
-  # Some initial setup
-  # m = 2
+  #### multivariate regression
+
+  # Inspect the dependent variables
 Y <- cbind("BETAPLASMA", "RETPLASMA")
+  # Covariance
+cov(pr_data[, c("BETAPLASMA","RETPLASMA")])
+
+  # Correlation
+cor(pr_data[, c("BETAPLASMA","RETPLASMA")])
+  # Low, 0.0716
+
+
   # n = 12
 X <- setdiff(colnames(pr_data), Y)
 
+cov(pr_data[, c("AGE",
+                       "QUETELET",
+                       "CALORIES",
+                       "FAT",
+                       "FIBER",
+                       "ALCOHOL",
+                       "CHOLESTEROL",
+                       "BETADIET",
+                       "RETDIET")])
+
+  # Correlation
+cor(pr_data[, c("AGE",
+                       "QUETELET",
+                       "CALORIES",
+                       "FAT",
+                       "FIBER",
+                       "ALCOHOL",
+                       "CHOLESTEROL",
+                       "BETADIET",
+                       "RETDIET")])  
+
+
+  # High multi-collinearity
 form <- as.formula(
   paste0("cbind(", paste(Y, collapse=","), ") ~ ",
          paste(X, collapse="+")) )
 
-model <- lm(form, data = pr_data)
-
-summary(model)
-
+model_1 <- lm(form, data = pr_data)
+summary(model_1)
 
 
 
@@ -65,6 +99,76 @@ summary(model)
 
 
 
+```{r}
+
+  # Perform PCA
+
+
+X <- pr_data %>% select("AGE",
+                       "QUETELET",
+                       "CALORIES",
+                       "FAT",
+                       "FIBER",
+                       "ALCOHOL",
+                       "CHOLESTEROL",
+                       "BETADIET",
+                       "RETDIET")
+
+  # Get the correlation of X
+S <- cor(X)
+
+Dinv <- diag(1/sqrt(diag(S)))
+R <- Dinv %*% S %*% Dinv
+
+  # The correlations are all very high, the lowest correlation is 0.874 between (x2, x4)
+R
+
+eig_R <- eigen(R)
+# eigR$values
+# eigR$vectors
+
+lambda_R <- eig_R$values
+V_R <- eig_R$vectors
+
+prop_R <- lambda_R / sum(lambda_R)
+cumprop_R <- cumsum(prop_R)
+
+	# summary table for correlation PCA
+cor_pca_summary <- tibble(
+  component = 1:9,
+  eigenvalue = lambda_R,
+  prop_var = prop_R,
+  cum_prop_var = cumprop_R
+)
+
+  # Display
+cor_pca_summary
+
+  # The table above demonstrates that the first component has the largest eigen value by far, and can account for a total of 96% of the variance of the principal components. This is not suprising, given that the variables were all highly correlated. Therefore, I would feel comfortable summarizing the 4 variables as a single linear combination. 
+
+  # Investigate loadings for each principal component
+cor_loadings <- V_R
+rownames(cor_loadings) <- colnames(X)
+colnames(cor_loadings) <- paste0("PC", 1:9)
+
+  # Display 
+cor_loadings
+
+
+pca <- prcomp(X, scale. = TRUE)
+pc_scores <- pca$x
+
+
+pr_data_pca <- cbind(pr_data, pc_scores)
+
+pca_model <- lm(cbind(BETAPLASMA, RETPLASMA) ~ PC1 + PC2 + PC3 + PC4 + SEX + SMOKSTAT + VITUSE, data = pr_data_pca)
+
+summary(pca_model)
+
+
+
+
+```
 
 
 
