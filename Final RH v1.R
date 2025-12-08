@@ -1,6 +1,15 @@
 rm(list=ls())
-setwd('/Users/richard/Desktop/Stat632_Fall25/Final')
-df <- read.table("plasma.txt", sep = "")
+
+# setwd('/Users/richard/Desktop/Stat632_Fall25/Final')
+
+library(readr)
+df <- read_delim("Plasma_Retinol.txt", 
+                      delim = "\t", 
+                      escape_double = FALSE, 
+                      col_names = FALSE,
+                      trim_ws = TRUE)
+
+# df <- read.table("plasma.txt", sep = "")
 
 library(broom)
 library(dplyr)
@@ -24,11 +33,10 @@ View(df)
 mod <- lm(cbind(betaplasma, retplasma) ~ ., data=df)
 modsum <- summary(mod)
 
-
 # get coefs and cis, make plot 
 # can edit later to get simultaneous conf ints, etc.
 coef_mat <- coef(mod)           
-ci_mat   <- confint(mod)         
+ci_mat   <- confint(mod)
 
 
 ci_df <- ci_mat %>%
