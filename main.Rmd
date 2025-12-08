@@ -149,23 +149,143 @@ cor_pca_summary
   # Investigate loadings for each principal component
 cor_loadings <- V_R
 rownames(cor_loadings) <- colnames(X)
-colnames(cor_loadings) <- paste0("PC", 1:9)
+colnames(cor_loadings) <- c("Overall Intake", "Diet Quality", "Alcohol Ratio", "Lifestyle Risk", paste0("PC", 5:9))
+
+# "Overall Intake", "Fiber vs Fat", "Alcohol vs Fiber", "Bad Lifestyle",
 
   # Display 
 cor_loadings
+
+
+cor_pca_summary %>% 
+  mutate(keep = if_else(component <= 4,"Kept","Dropped")) %>% 
+  ggplot(aes(x = component,y = prop_var,fill = keep)) +
+  geom_col() +
+  geom_point(size = 2) +
+  geom_line() +
+  scale_x_continuous(breaks = 1:9) +
+  scale_fill_manual(values = c("Kept" = "steelblue","Dropped" = "grey80")) +
+  labs(x = "Principal component",
+       y = "Proportion of variance",
+       fill = NULL,
+       title = "Scree plot") + theme_minimal()
+
+library(tidyr)
+library(tibble)
+
+
+
+
+load_df <- cor_loadings %>%
+  as.data.frame() %>%
+  rownames_to_column("variable") %>%
+  pivot_longer(-variable,names_to = "PC",values_to = "loading")
+
+pc_order <- c("Overall Intake",
+              "Diet Quality",
+              "Alcohol Ratio",
+              "Lifestyle Risk",
+              paste0("PC", 5:9))
+
+  # Apply ordering to the PC column
+load_df$PC <- factor(load_df$PC, levels = pc_order)
+
+load_df <- load_df %>% mutate(keep = if_else(PC %in% c("Overall Intake","Diet Quality",
+                                  "Alcohol Ratio","Lifestyle Risk"),
+                        "Kept","Dropped"))
+
+ggplot(load_df,aes(x = PC,y = variable,fill = loading)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2() +
+  geom_tile(data = subset(load_df,keep == "Kept"),
+            color = "black",size = 0.6,fill = NA) +
+  labs(x = NULL,y = NULL,fill = "Loading",
+       title = "PCA loadings") +
+  theme_minimal()
+  # theme(axis.text.x = element_text(angle = 45,hjust = 1))
+
+```
+
+```{r}
 
 
 pca <- prcomp(X, scale. = TRUE)
 pc_scores <- pca$x
 
 
-pr_data_pca <- cbind(pr_data, pc_scores)
+pr_data_pca <- cbind(pr_data, pc_scores) %>% rename("Overall Intake" = PC1, "Diet Quality" = PC2, "Alcohol Ratio" = PC3, "Lifestyle Risk" = PC4)
 
-pca_model <- lm(cbind(BETAPLASMA, RETPLASMA) ~ PC1 + PC2 + PC3 + PC4 + SEX + SMOKSTAT + VITUSE, data = pr_data_pca)
+# options(contrasts = c("contr.sum", "contr.poly"))
+options(contrasts = c("contr.treatment", "contr.poly"))
+
+
+
+pca_model <- lm(cbind(BETAPLASMA, RETPLASMA) ~ `Overall Intake` + `Diet Quality` + `Alcohol Ratio` + `Lifestyle Risk` + SEX + SMOKSTAT + VITUSE, data = pr_data_pca) 
 
 summary(pca_model)
 
+coef_mat <- coef(pca_model)           
+ci_mat   <- confint(pca_model)
 
+
+ci_df <- ci_mat %>%
+  as.data.frame() %>%
+  mutate(row = rownames(ci_mat)) %>%
+  separate(row, into = c("response", "term"), sep = "\\:") %>%
+  dplyr::rename(conf.low  = `2.5 %`,
+         conf.high = `97.5 %`)
+
+coef_df <- coef_mat %>%
+  as.data.frame() %>%
+  mutate(term = rownames(coef_mat)) %>%
+  pivot_longer(cols = -term, names_to = "response", values_to = "estimate")
+
+plot_df <- left_join(coef_df, ci_df, by = c("term", "response"))
+
+View(plot_df)
+library(ggplot2)
+
+plot_df <- plot_df %>%
+  group_by(response) %>%
+  mutate(term = reorder(term, abs(estimate))) %>%
+  ungroup()
+
+# if conf int contains 0, color red
+plot_df <- plot_df %>%
+  mutate(
+    sig = ifelse(conf.low <= 0 & conf.high >= 0, "nonsig", "sig")
+  )
+
+# dropping intercept, too diffuclt to read with it
+plot_df_no_intercept <- plot_df %>%
+  filter(term != "(Intercept)")
+
+plot_df_no_intercept$term <- factor(plot_df_no_intercept$term, levels = unique(plot_df_no_intercept$term))
+
+ggplot(plot_df_no_intercept, aes(x = term, y = estimate, color = sig)) +  
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey60") +
+  geom_point(size = 2) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high),
+                width = 0.15) +  # color now comes from aes(color = sig)
+  scale_color_manual(values = c("sig" = "blue1", "nonsig" = "red1")) +
+  facet_wrap(~ response, scales = "free_y") +
+  coord_flip() +
+  labs(
+    title = "Model Coefficients with 95% CI",
+    x = "Predictor",
+    y = "Estimate",
+    color = "Significance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank(),
+    strip.text = element_text(size = 14, face = "bold"),
+    plot.title = element_text(size = 18, face = "bold"),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size = 12)
+  )
+df
 
 
 ```
