@@ -103,7 +103,7 @@ summary(model_1)
 
   # Perform PCA
 
-
+library(tidyverse)
 X <- pr_data %>% select("AGE",
                        "QUETELET",
                        "CALORIES",
@@ -289,6 +289,108 @@ df
 
 
 ```
+
+```{r}
+library(broom)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(patchwork)
+
+pca_model <- lm(
+  cbind(BETAPLASMA, RETPLASMA) ~ 
+    `Overall Intake` + `Diet Quality` + `Alcohol Ratio` + `Lifestyle Risk` +
+    SEX + SMOKSTAT + VITUSE,
+  data = pr_data_pca
+)
+
+compute_wilks_lambda <- function(data, fit) {
+  # Y: matrix of responses (here 2 columns: BETAPLASMA, RETPLASMA)
+  Y <- as.matrix(data[, colnames(fit$coefficients)])  # uses column names from the fit
+  
+  # X: design matrix built with the same terms (including intercept & factors)
+  X <- model.matrix(fit$terms, data = data)
+  
+  # Multivariate least squares estimates
+  XtX_inv <- solve(t(X) %*% X)
+  B_hat   <- XtX_inv %*% t(X) %*% Y
+  Y_hat   <- X %*% B_hat
+  
+  # Error SSCP matrix E
+  E <- t(Y - Y_hat) %*% (Y - Y_hat)
+  
+  # Total SSCP matrix T (about the sample mean)
+  Y_centered <- scale(Y, center = TRUE, scale = FALSE)
+  Tmat       <- t(Y_centered) %*% Y_centered
+  
+  # Wilks' Lambda = |E| / |T|
+  lambda <- det(E) / det(Tmat)
+  return(lambda)
+}
+
+# Observed Wilks' Lambda for your PCA model
+obs_lambda <- compute_wilks_lambda(pr_data_pca, pca_model)
+obs_lambda
+
+set.seed(123)    # for reproducibility
+B <- 2000        # number of bootstrap samples
+n <- nrow(pr_data_pca)
+
+boot_lambda <- numeric(B)
+
+for (b in 1:B) {
+  idx <- sample(seq_len(n), replace = TRUE)
+  boot_data <- pr_data_pca[idx, ]
+  
+  # same model structure, but re-fit on bootstrap sample
+  fit_b <- lm(
+    cbind(BETAPLASMA, RETPLASMA) ~ 
+      `Overall Intake` + `Diet Quality` + `Alcohol Ratio` + `Lifestyle Risk` +
+      SEX + SMOKSTAT + VITUSE,
+    data = boot_data
+  )
+  
+  boot_lambda[b] <- compute_wilks_lambda(boot_data, fit_b)
+}
+
+
+```
+```{r}
+# Observed Lambda
+obs_lambda
+
+
+# Empirical p-value: proportion of bootstrap Λ less than or equal to observed
+boot_pval <- mean(boot_lambda <= obs_lambda)
+boot_pval
+
+# 95% bootstrap CI for Wilks' Lambda
+boot_ci <- quantile(boot_lambda, c(0.025, 0.975))
+boot_ci
+
+```
+
+
+```{r}
+lambda_df <- tibble(lambda = boot_lambda)
+
+ggplot(lambda_df, aes(x = lambda)) +
+  geom_histogram(bins = 40, color = "white") +
+  geom_vline(xintercept = obs_lambda, color = "red", linewidth = 1) +
+  labs(
+    title    = "Bootstrap Distribution of Wilks' Lambda",
+    subtitle = paste0("Red line = observed Λ = ", round(obs_lambda, 3)),
+    x = "Wilks' Lambda",
+    y = "Frequency"
+  ) +
+  theme_minimal()
+
+```
+
+
+
+
+
 
 
 
